@@ -1,0 +1,83 @@
+
+
+
+###==>  CÁLCULO DE INDICES DE CAUDALES <==###
+
+# A partir de una tabla de tipo csv, con separadores de de campo  = espacio, armada con 3 columnas con los siguientes
+# headers ("Año_hidrologico" "día","Mes","Año" "caudal")
+# Calcula, el valor de centros de masa de caudal, Q mínimo, Q máximo, y Q promedio. Para cada año hidrológico. 
+
+# Leandro Cara 
+# lcara@mendoza-conicet.gob.ar
+
+
+setwd("/home/leandro/CONICET/clima/guido/")
+require(stats)
+
+###------------Leo la tabla y la asigno a un data frame--------#
+
+caudales_año <- read.csv("Guido.csv",header=T,sep="",dec=".") 
+
+# ------------------DEFINO LAS VARIABLES QU NECESITO---------------####
+
+centros_de_masa <- data.frame(matrix(NA, nrow = 0, ncol = 6))
+caudal_max <- data.frame(matrix(NA, nrow = 0, ncol = 6))
+caudal_min <- data.frame(matrix(NA, nrow = 0, ncol = 6))
+caudal_prom <- data.frame(matrix(NA, nrow = 0, ncol =2))
+
+###---- GENERO LOS RESULTADOS BUSCADOS (CENTRO DE MASA, Q MAX , Q MIN,TOTAL, Y Q PROMEDIO)-----##
+
+for(i in unique(caudales_año$Año_hidrologico)){
+  primero<-subset(caudales_año, Año_hidrologico== i) #reemplazo por Valoraño
+  cumsum(primero[,5])->primero$caudal_acum # Calculo la frecuencia acumulada para los caudales
+  centros_de_masa[i-1955,]<-head(na.omit(primero[primero$caudal_acum >= (max(primero[primero$Año_hidrologico == i, 6],na.rm=TRUE)/2) & primero$Año_hidrologico ==  i,]),1)
+  caudal_max[i-1955,]<-head(na.omit(primero[primero$caudal == (max(primero[primero$Año_hidrologico == i, 5],na.rm=TRUE)) & primero$Año_hidrologico ==  i,]),1)
+  caudal_min[i-1955,]<-head(na.omit(primero[primero$caudal == (min(primero[primero$Año_hidrologico == i, 5],na.rm=TRUE)) & primero$Año_hidrologico ==  i,]),1)
+  caudal_prom[i-1955,]<-primero[primero$Año_hidrologico == i, 1]
+  caudal_prom[i-1955,2] <-mean(primero[primero$Año_hidrologico == i, 5],na.rm=TRUE)
+}
+centros_de_masa[,6]<-((centros_de_masa[,6]) *2)
+
+##--- DOY NOMBRE A LAS VARIABLES CREADAS --------###
+
+names(caudal_prom) <- c("Año_hidrologico","Q promedio")   
+names(caudal_max) <- c("Año_hidrologico","día_max","Mes_max","Año_max","Qmax","fecha Q max")
+names(caudal_min) <- c("Año_hidrologico","día_min","Mes_min","Año_min","Qmin","fecha Q min")
+names(centros_de_masa) <- c("Año_hidrologico","día_CM","Mes_CM","Año_CM","fecha CM", "Q Total")
+
+###---- UNIFICO LOS CAMPOS DE ("día","Mes", y "Año") EN UN SOLO CAMPO "Fecha"----------###
+
+caudal_max[,6]<-paste(caudal_max$día_max,caudal_max$Mes_max,caudal_max$Año_max,sep="/")
+caudal_min[,6]<-paste(caudal_min$día_min,caudal_min$Mes_min,caudal_min$Año_min,sep="/")
+centros_de_masa[,5]<-paste(centros_de_masa$día_CM,centros_de_masa$Mes_CM,centros_de_masa$Año_CM,sep="/")
+
+###---- ELIMINO LOS CAMPOS DE ("día","Mes", y "Año") DE LAS VARIABLES ------###
+
+caudal_max<- caudal_max[,c("Año_hidrologico","fecha Q max","Qmax")]
+centros_de_masa<- centros_de_masa[,c("Año_hidrologico","Q Total", "fecha CM")]
+caudal_min<- caudal_min[,c("Año_hidrologico","fecha Q min","Qmin")]
+
+##-------- JUNTO TODAS LAS VARIABLES EN UNA Y LAS EXPORTO A LA TABLA "indices.csv"----####
+
+indices<-merge(caudal_prom,centros_de_masa)
+indices<-merge(indices,caudal_max)
+indices<-merge(indices,caudal_min)
+
+write.table(indices, "/home/leandro/CONICET/clima/guido/indices de caudal.csv",sep=";")
+
+##--- GENERO Y EXPORO LOS GRAFICOS "caudal promedio.png", "caudal maximo.png", y "caudal minimo.png---------###
+
+png("Caudal maximo.png")
+plot(indices[,1],indices[,6], type= "l", lty=1:5, main="Caudal Máximo", xlab = "Año Hidrológico", ylab = "Caudal en m3/s")
+dev.off()
+
+png("Caudal minimo.png")
+plot(indices[,1],indices[,8], type= "l", lty=1:5, main="Caudal Mínimo", xlab = "Año Hidrológico", ylab = "Caudal en m3/s")
+dev.off()
+
+png("caudal promedio.png")
+
+plot(indices[,1],indices[,2], type= "l", main="Caudal Promedio", xlab = "Año Hidrológico", ylab = "Caudal en m3/s")
+add=TRUE
+line(indices$Año_hidrologico,indices$caudal_max)
+dev.off()
