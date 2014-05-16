@@ -1,0 +1,174 @@
+
+
+
+# ==> CALCULA PORCENTAJE Y ALTURA MÍNIMA DE LA COBERTURA DE NIEVE, A PARTIR DE IMAGENES MODIS MOD10A1. REPROYECTADAS EN MRT <==#
+                
+                                # ==> PARA UNA SECUENCIA TEMPORAL ANUAL <== #
+
+
+
+# Leandro Cara 
+# lcara@mendoza-conicet.gob.ar
+
+
+## MODIS 
+### -- Snow free = 25
+### -- Snow cover = 200
+### -- Cloud cover = 50
+### -- demases deben ser = NA
+
+
+
+
+### LEAME 
+
+# Si ud. no es usuario de r, en las siguientes líneas se explica como correr el modelo, sin intervención del usuario.
+# Esta rutina, para poder funcionar correctamente, debe contar con una capa shapefile de la cuenca a calcular,
+# un Modelo Digital de Elevaciones de mayor extensión que la cuenca, y la capa Daily Cover 
+# del producto MODIS MOD10A1, reproyectada, con un tamño de pixel de 250 x 250 m y cortada a un area mayor 
+# a la cuenca a calcular.
+# Toda esta información deberá poseer el mismo sistema de proyección, 
+# Tanto el DEM como las imagenes, se debarán encontrar en subdirectorios, dentro del directorio de trabajo. 
+# El DEM, deberá llamarse "DEM.tif", y deberá encontrarse en una subcarpeta llamada "DEM" 
+# La subcarpeta de las imágenes debe tener por nombre, el año del set de datos a procesar. 
+# Por ej: si las imágenes correponden al año 2000, la carpeta contenedora debe llamarse "2000"
+# A su vez estas deben estar dentro de una carpeta llamada "IMGMODIS" dentro del directorio de trabajo.
+# Esta rutina no permite calcular mas de un año juntos, y mo es conveniente mezclar set de datos de diferentes años
+# Sin modificar previamente el código
+# Para que el modelo corra correctamente, deberá modificarse la variable year. Por defecto calculará el año 2000.
+# La rutina entrega como resultado la siguiente tabla:  | año	| dia_jul | Superficie	| Cob_nieve	| Cob_nubes	| LINP |
+# Y los gráficos "Alt_min_cobertura" y "Prcentaje_de_cobertura"
+
+
+
+
+
+
+setwd("~/DOCTORADO/MODIS/INDICE_DE_NIEVE/CCA_Mendoza_Centro/") 
+library(raster)
+
+###====> VARIABLE AÑO ( Acá vamos a poner que año vamos a procesar. por defecto es el 2000)
+
+year<-c(2000)
+
+
+###Creo la tabla donde van a ir los porcentajes de cobertura
+coberturas<-data.frame(matrix(NA, ncol = 6))
+names(coberturas) <- c("año","dia_jul","Superficie","Cob_nieve","Cob_nubes","LINP")
+
+####--cargo en el entorno de tabajo el shape de la cuenca
+
+cuenca <- shapefile("Cuenca_Tunuyan.shp")
+plot(cuenca)
+
+###--Cargo el DEM para calcular el LINP
+### -- Para cargar el DEM, este debe estar en una subcarpeta dentro de donde se encuentran las imágenes--##
+
+startdir <- getwd()
+setwd(paste(getwd(), "/DEM", sep=""))
+dem<-raster("DEM.tif")
+plot(dem)
+setwd(startdir)
+
+##### Corto el DEM Con la cuenca
+
+dem.mask <- mask(dem, cuenca)
+#dem.mask <- trim(dem.mask)
+plot(dem.mask)
+
+###--Cargo todas las imagenes que se encuentren en la carpeta de trabajo
+### Arma un objeto de lista, con los nombres de los archivos que contienen "tiff"
+
+setwd(paste(getwd(),"/IMGMODIS/" ,year,"/", sep=""))
+files <- list.files(pattern="tif")
+modis <- list()
+for(i in 1:length(files)) {
+  modis[[i]] <- raster(files[i])
+}
+setwd(startdir)
+
+###-- Junto las imágenes de la carpeta "IMAGENES" en un solo raster, en forma de bandas
+
+p1<-do.call(stack,modis)
+plot(p1[[1:10]])
+
+### Corto la imagen "multibanda" con la forma de la cuenca  (esto puede demorar un rato)
+imagen.mask <- mask(p1, cuenca)
+plot(imagen.mask[[1:12]])
+#imagen.mask <- trim(imagen.mask,values=NA)
+#plot(imagen.mask[[1:12]])
+
+
+# Resampleo el "DEM.MASK" para que tenga el mismo exent que las imagenes y así poder calcular la cuenca
+dem.resample <-resample(dem.mask,imagen.mask)
+#plot(dem.resample)
+
+######--obtengo un raster con la altura donde se encuentra la nieve
+nieve1<- calc(imagen.mask, fun=function(x){ x[x != 200] <- NA; return(x-(x-1))})
+nieve.alt<-dem.resample*nieve1
+plot(nieve.alt[[1:1]])
+
+###-- Calculo los porcentajes de cobertura de nieve y de nubes en la cuenca
+for (i in 1:nlayers(imagen.mask)){
+  sub <-subset(imagen.mask,i)
+  coberturas[i,3]<- as.data.frame((sum(values(!is.na(sub))*250*250/1000000)))
+  coberturas[i,4]<- as.data.frame((sum(values(!is.na(calc(sub, fun=function(i){ i[i != 200] <- NA; return(i-(i-1))})))*250*250/1000000)))
+  coberturas[i,5]<- as.data.frame((sum(values(!is.na(calc(sub, fun=function(i){ i[i == 200 | i == 25 ] <- NA; return(i-(i-1))})))*250*250/1000000)))
+  coberturas[i,1]<-files[i]
+}
+
+### --- Calculo la altura mínima en la que encuentro nieve "LINP"
+
+for (i in 1:nlayers(nieve.alt)){
+  sub <-subset(nieve.alt,i)
+  coberturas[i,6]<- as.data.frame(minValue(sub))
+}
+
+###transformo las superficies a procentajes
+coberturas[,4]<-coberturas[,4]/coberturas[,3]*100
+coberturas[,5]<-coberturas[,5]/coberturas[,3]*100
+
+
+####-Extraigo los campos de año y dia juliano del nombre
+coberturas[,2]<-substr(coberturas[,1],14,16)##### ESTOS VALORES DE INICIO Y FIN SE CAMBIAN CON EL NUEVO NOMBRE DEL ARCHIVO
+coberturas[,1]<-substr(coberturas[,1],10,13)##### ESTOS VALORES DE INICIO Y FIN SE CAMBIAN CON EL NUEVO NOMBRE DEL ARCHIVO
+coberturas[,1]<-as.numeric(coberturas[,1])
+coberturas[,2]<-as.numeric(coberturas[,2])
+
+
+###--- Agrego a la tabla los días faltantes--##
+
+tabla<-as.data.frame(c(1:366))
+names(tabla)<-("dia_jul")
+coberturas<-merge(tabla,coberturas,all=TRUE)
+
+
+####---Función para ordenar la tabla
+df.permuta <- function(df, name1, name2) {
+  i1 = which(name1 == names(df))
+  i2 = which(name2 == names(df))
+  indices = 1:length(df)
+  indices[i1] = i2
+  indices[i2] = i1
+  df[indices]
+}
+coberturas<-df.permuta(coberturas,"año","dia_jul")
+#####----#####----######----#####----#####---#####
+
+
+###---Escribo la tabla con extensión ".csv", en el directorio de trabajo
+
+write.table(coberturas,paste("coberturas","_", year), sep=";",dec=",")
+
+###---Extraigo el gráfico de porcentaje de cobertura en el año
+
+png(paste("Prcentaje_de_cobertura","_", year))
+plot(coberturas$Cob_nieve,type="l",main="Cobertura de nieve", xlab="", ylab="Procentaje de cobertura")
+dev.off()
+
+###---Extraigo el gráfico de altura Mínima de la cobertura en el año
+
+png(paste("Alt_min_cobertura","_", year))
+plot(coberturas$LINP,type="l",main="Altura de LINP",xlab="",ylab="Altura de LINP")
+dev.off()
+
