@@ -1,0 +1,62 @@
+
+## ==> Cálculo de anomalías para ciclos interanuales <===###
+
+# Leandro Cara
+# lcara@mendoza-conicet.gob.ar
+
+
+
+
+setwd("/home/leandro/DOCTORADO/MODIS/Evaluacion_interanual/")
+tabla<-read.table("CCA_NORTE.csv",sep=";",dec=",",header=T)
+
+# Levanto una tabla con | año | día_jul | valriable 1 ..|..2..| 
+# elimino los días biciestos, para facilitar los cálculos
+## Esto es para limpiar la tabla, borra las columnas 1, 4,5,6,7; y deja las columnas 2,3,8,9
+# que en mi caso corresponden a | año | dia_jul | % de cob | LINP | 
+
+tabla<-tabla[,-1]
+for (i in 1:4){
+  tabla<-tabla[,-3]  
+}
+# Elimino los días Julianos "366"
+# Genero una tabla con los datos sobrantes de los días biciestos
+leap_year <-(365) 
+biciestos <- tabla[tabla$dia_jul > leap_year,]  
+tabla<- tabla[tabla$dia_jul <= leap_year,]  
+
+
+year<-data.frame(matrix(NA,nrow= 365, ncol = 3))
+names(year) <- c("dia_jul","Nieve","LINP")
+year[,1]<-unique(tabla$dia_jul)
+year<-as.data.frame(year)
+
+for(i in unique(tabla$dia_jul)){
+  sub<-subset(tabla, dia_jul== i) 
+  year[i,2]<-mean((sub[,3]),na.rm=TRUE)
+  year[i,3]<-mean((sub[,4]),na.rm=TRUE)
+}
+
+r1<-cbind(tabla,year)
+
+anomalias<-data.frame(matrix(NA,nrow=length(tabla$dia_jul), ncol = 4))
+names(anomalias)<-names(tabla)
+
+anomalias[,1]<-tabla[,1]
+anomalias[,2]<-tabla[,2]
+anomalias[,3]<-r1[,3]-r1[,6]
+anomalias[,4]<-r1[,4]-r1[,7]
+png("Anomalias_cobertura")
+plot(anomalias[,3],type=, main="Anomalías Diarias", xlab = "Día Juliano", ylab = "Porcentaje")
+dev.off()
+png("Anomalias_LINP")
+plot(anomalias[,4],type=, main="Anomalías Diarias", xlab = "Día Juliano", ylab = "Límite inferior de nieve")
+dev.off()
+png("Ciclo_anual_cobertura")
+plot(year[,2],type=,main="Ciclo Anual Diario", xlab = "Día Juliano", ylab = "Porcentaje")
+dev.off()
+png("Ciclo_anual_LINP")
+plot(year[,3],type=, main="Ciclo Anual Diario", xlab = "Día Juliano", ylab = "Límite inferior de nieve")
+dev.off()
+write.csv2(anomalias,"Anomalias_diarias.csv")
+write.csv2(year,"ciclo_variacion_anual.csv")
