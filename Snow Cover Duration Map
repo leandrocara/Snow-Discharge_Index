@@ -1,0 +1,70 @@
+
+# Análisis de persistencia de nieve.----
+# Autor: Leandro Cara 
+# Fecha: 20 de Octubre de 2014
+
+### Esta rutina determina la persistencia para cada pixel del layer 1 de imágenes MOD10A1 
+### de nieve y de nubes por año, a través de sumas de raster y álgebra booleana.
+
+#### Información de imágenes MOD10A1
+## MODIS 
+### -- Snow free = 25
+### -- Snow cover = 200
+### -- Cloud cover = 50
+### -- demases deben ser = NA
+
+# Limpio el espacio de trabajo, cargo mi espacio de trabjo y las librerías que necesito.----
+rm(list=ls())
+setwd("~/DOCTORADO/MODIS/INDICE_DE_NIEVE/CCA_Mendoza_Norte/") 
+startdir <- getwd()
+library(raster)
+library(rgdal)
+
+# Cargo la cuenca a analizar.----
+
+setwd(paste(getwd(), "/SHP", sep=""))
+cuenca <- shapefile("Cuenca_mendoza.shp")
+setwd(startdir)
+
+# Cargo las imágenes MOD10A1 en mi espacio de trabajo.----
+
+setwd(paste(getwd(),"IMAGENES", sep="/"))
+files <- list.files(pattern="tif")
+setwd(startdir)
+
+# Genero el bucle que me calcula persistencia por año.----
+
+for (z in unique(substr(files,10,13))){
+  sb1 <- list()
+  modis <- list()
+  sb1 <- subset(files,substr(files,10,13)== z)
+  
+  setwd(paste(getwd(),"IMAGENES", sep="/"))
+  for(i in 1:length(sb1)) modis[[i]] <- raster(sb1[i])
+  setwd(startdir)
+  
+  print(paste("año",z,"N° de imágenes",i))
+  
+  # hago un raster stack a partir de la lista p1 
+  p1<-do.call(stack,modis)
+  
+  ## armo una imagen booleana con nieve == 1, no nieve == NA
+  ## nubes == 1, terreno == NA
+  nieve.1<- calc(p1, fun=function(x){ x[x != 200] <- NA; return(x-(x-1))})
+  nubes.1<- calc(p1, fun=function(x){ x[x == 200 | x == 25 ] <- NA; return(x-(x-1))})
+  
+  # Calculo la cantidad de días con nieve por año para cada celda  
+  nieve <- sum(nieve.1[[seq(1,length(modis),by=1)]],na.rm=T)
+  nubes <- sum(nubes.1[[seq(1,length(modis),by=1)]],na.rm=T)
+
+  # Genero una máscara de la capa
+  nieve.mask <- mask(nieve, cuenca)
+  nube.mask <- mask(nubes, cuenca)
+  
+  # Guardo una imágen resumen de la persistencia de la nieve por año.
+  setwd(paste(getwd(),"PN1", sep="/"))
+  writeRaster(nieve.mask,filename =paste("nieve_",z,".tif",sep=""),format="GTiff", overwrite=T)
+  writeRaster(nube.mask,filename = paste("nubes_",z,".tif",sep=""),format="GTiff", overwrite=T)
+  setwd(startdir)
+}
+
